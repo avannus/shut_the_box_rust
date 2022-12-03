@@ -3,56 +3,52 @@ extern crate rustop;
 type Uns = u8;
 type Float = f64;
 
-use std::{collections::HashMap, hash::Hash};
+use std::collections::HashMap;
 
-// todo implement
-// struct Game {
-//     game_stats: GameStats,
-//     game_state: GameState,
-//     game_data: GameData,
-// }
+#[derive(Debug)]
+struct Trunk {
+    game_rules: GameRules,
+    game_meta: GameMeta,
 
-#[derive(Debug, Clone)]
-struct GameStats <'g_state> {
+    // todo prob reference Vec<Uns> owned by the HashMap later
+    start_tiles: Vec<Uns>,
+
+    game_db: HashMap<Vec<Uns>, GameStats>, // contains all possible child game states
+}
+
+#[derive(Debug)]
+struct GameRules {
+    die_vals: Vec<Uns>, // all possible die values
+    die_cnt: Uns,       // number of dice
+    max_remove: Uns,    // max number of tiles to remove, 0 for unlimited
+}
+
+#[derive(Debug)]
+struct GameMeta {
+    trphm: HashMap<Uns, Vec<Vec<Uns>>>, // tile removal possibilities hash map
+    roll_probs_single: HashMap<Uns, Float>, // probability of winning if a single die is rolled
+    roll_probs_multi: HashMap<Uns, Float>, // probability of winning if multiple dice are rolled
+}
+
+#[derive(Debug)]
+struct GameStats {
     win_chance: Float,        // chance of winning
     win_chance_single: Float, // chance of winning with a single die
-    win_chance_all: Float, // chance of winning with all dice
+    win_chance_multi: Float,  // chance of winning with all dice
 
-    child_count: usize,                                  // number of children
-    next_states: HashMap<Uns, Vec<&'g_state GameState<'g_state>>>,          // all possible next states keyed by roll
-    optimal_next_states_single: HashMap<Uns, &'g_state GameState<'g_state>>, // optimal next states with one die
-    optimal_next_states_double: HashMap<Uns, &'g_state GameState<'g_state>>, // optimal next states with two dice
+    child_count: usize,                                 // number of children
+    next_states: HashMap<Uns, Vec<Vec<Uns>>>,           // all possible next states keyed by roll
+    optimal_next_states_single: HashMap<Uns, Vec<Uns>>, // optimal next states with one die
+    optimal_next_states_multi: HashMap<Uns, Vec<Uns>>,  // optimal next states with two dice
 }
 
-#[derive(Eq, PartialEq, Hash, Clone, Debug)] // todo remove debug
-struct GameState <'g_rules> {
-    die_vals: &'g_rules Vec<Uns>, // all possible die values
-    die_cnt: &'g_rules Uns,       // number of dice
-    tiles: &'g_rules Vec<Uns>,    // remaining tiles
-    max_remove: &'g_rules Uns,    // max number of tiles to remove, 0 for unlimited
-}
-
-// todo implement
-// struct GameData {
-//     trphm: HashMap<us, Vec<Vec<us>>>,
-//     game_db: HashMap<GameState, GameStats>,
-//     roll_probs_single: HashMap<us, float>,
-//     roll_probs_double: HashMap<us, float>,
-// }
-
-fn get_best_game_state(
-    game: Vec<(GameState, GameStats)>,
-) -> &'static GameState<'static> {
-    let mut best_game_state = &game[0].0;
-    let mut best_game_stats = &game[0].1;
-    for (game_state, game_stats) in game {
-        if game_stats.win_chance > best_game_stats.win_chance {
-            best_game_state = &game_state;
-            best_game_stats = &game_stats;
-        }
-    }
-    best_game_state
-}
+/// TODOS
+/// For now, all data is being cloned for everything, which is not ideal
+/// General optimizations
+///     Is there a smarter way to get the game metadata, esp when sorted?
+/// General Improvements
+///     Allow to roll any number of dice, not just multi and single
+/// Remove #[derive(Debug)] from structs
 fn main() {
     // TODO make these command line args
     let die_vals = vec![1, 2, 3, 4, 5, 6];
@@ -61,65 +57,80 @@ fn main() {
     let max_remove = 0;
 
     // todo probably can optimize with this sorted
-    let all_rolls = get_srt(&get_roll_counts(&die_vals, die_cnt, 0));
-    let roll_probs_double = get_roll_probabilities_double(&all_rolls);
-    let roll_probs_single = get_roll_probabilities_single(&die_vals);
-    let roll_possib = get_srt_dedup_keys(&roll_probs_double, &roll_probs_single);
+    // todo eventually make this where the num dice rolled is totally dynamic
+    let all_multi_rolls = get_srt(&get_roll_counts(&die_vals, die_cnt, 0));
+    let roll_probs_multi = get_roll_probabilities(&all_multi_rolls);
+
+    let all_single_rolls = get_srt(&get_roll_counts(&die_vals, 1, 0));
+    let roll_probs_single = get_roll_probabilities(&all_single_rolls);
+
+    let roll_possib = get_srt_dedup_keys(&roll_probs_multi, &roll_probs_single);
 
     let trphm = get_tile_removal_possibilities(&tiles, &roll_possib, &max_remove);
-    println!("roll_counts: {:?}", all_rolls);
+    println!("roll_counts: {:?}", all_multi_rolls);
     println!("possible_rolls: {:?}", roll_possib);
-    println!("roll_probabilities: {:?}", roll_probs_double);
+    println!("roll_probabilities: {:?}", roll_probs_multi);
     println!("roll_probabilities_single: {:?}", roll_probs_single);
     println!("trphm: {:?}", trphm);
 
-    let mut game_db: HashMap<GameState, GameStats> = HashMap::new();
-
-    let game_state = GameState {
+    /*
+    Trunk needs:
+    game_rules
+        die_vals
+        die_cnt
+        max_remove
+    game_meta
+        trphm
+        roll_probs_single
+        roll_probs_multi
+    start_tiles
+    game_db
+    */
+    let mut game_db: HashMap<Vec<Uns>, GameStats> = HashMap::new();
+    let game_rules = GameRules {
         die_vals,
         die_cnt,
-        tiles,
         max_remove,
     };
-
-    let x = r_solve(
-        &game_state,
-        &roll_probs_double,
-        &roll_probs_single,
-        &trphm,
-        &mut game_db,
-    );
-    println!("{:?}", x);
-}
-
-fn get_single_legality(game_state: &GameState) -> bool {
-    let tiles = &game_state.tiles;
-    let die_vals = &game_state.die_vals;
-    tiles.len() > 0 && tiles.iter().max().unwrap() <= die_vals.iter().max().unwrap()
+    let game_meta = GameMeta {
+        trphm,
+        roll_probs_single,
+        roll_probs_multi,
+    };
+    let start_tiles = tiles.clone();
+    // fill out game_db
+    r_solve(&start_tiles, &game_rules, &game_meta, &mut game_db);
+    let trunk = Trunk {
+        game_rules,
+        game_meta,
+        start_tiles,
+        game_db,
+    };
+    println!("trunk: {:?}", trunk);
 }
 
 fn r_solve(
-    game_state: &GameState,
-    roll_probs_double: &HashMap<Uns, Float>,
-    roll_probs_single: &HashMap<Uns, Float>,
-    trphm: &HashMap<Uns, Vec<Vec<Uns>>>,
-    game_db: &mut HashMap<GameState, GameStats>,
+    tiles: &Vec<Uns>,
+    game_rules: &GameRules,
+    game_meta: &GameMeta,
+    game_db: &mut HashMap<Vec<Uns>, GameStats>,
 ) -> &'static GameStats {
     let existing_game = game_db.get(game_state);
     match existing_game {
         Some(existing_game) => {
             return existing_game;
         }
-        None => { // todo review this, weird copying for no real good reason besides simplicity to code
+        None => {
+            // todo review this, weird copying for no real good reason besides simplicity to code
             if game_state.tiles.len() == 0 {
                 let x = GameStats {
                     win_chance: 1.0,
                     win_chance_single: 1.0,
-                    win_chance_all: 1.0,
+                    win_chance_multi: 1.0,
                     child_count: 0,
                     next_states: HashMap::new(),
                     optimal_next_states_single: HashMap::new(),
-                    optimal_next_states_double: HashMap::new(),
+                    optimal_next_states_multi: HashMap::new(),
                 };
                 game_db.insert(*game_state, x);
                 return &x;
@@ -130,10 +141,7 @@ fn r_solve(
             let mut next_valid_states_single = HashMap::new();
             // TODO rework to a single loop where next_valid_states_hm.get(roll) is called once per roll
             for (roll, _) in roll_probs_single {
-                next_valid_states_single.insert(
-                    *roll,
-                    next_valid_states_hm.get(roll).unwrap(),
-                );
+                next_valid_states_single.insert(*roll, next_valid_states_hm.get(roll).unwrap());
             }
             let mut next_best_states_single = HashMap::new();
             for (roll, next_valid_states_single) in next_valid_states_single {
@@ -141,7 +149,7 @@ fn r_solve(
                 for next_valid_state_single in next_valid_states_single {
                     let next_state_single = r_solve(
                         next_valid_state_single,
-                        roll_probs_double,
+                        roll_probs_multi,
                         roll_probs_single,
                         trphm,
                         game_db,
@@ -159,52 +167,68 @@ fn r_solve(
             );
 
             // all dice
-            let mut next_valid_states_double= HashMap::new();
-            for (roll, _) in roll_probs_double {
-                next_valid_states_double.insert(
-                    *roll,
-                    next_valid_states_hm.get(roll).unwrap(),
-                );
+            let mut next_valid_states_multi = HashMap::new();
+            for (roll, _) in roll_probs_multi {
+                next_valid_states_multi.insert(*roll, next_valid_states_hm.get(roll).unwrap());
             }
-            let mut next_best_states_double = HashMap::new();
-            for (roll, next_valid_states_double) in next_valid_states_double {
+            let mut next_best_states_multi = HashMap::new();
+            for (roll, next_valid_states_multi) in next_valid_states_multi {
                 let mut curr_roll_games = Vec::new();
-                for next_valid_state_double in next_valid_states_double {
-                    let next_state_double = r_solve(
-                        next_valid_state_double,
-                        roll_probs_double,
+                for next_valid_state_multi in next_valid_states_multi {
+                    let next_state_multi = r_solve(
+                        next_valid_state_multi,
+                        roll_probs_multi,
                         roll_probs_single,
                         trphm,
                         game_db,
                     );
-                    curr_roll_games.push((*next_valid_state_double, *next_state_double));
+                    curr_roll_games.push((*next_valid_state_multi, *next_state_multi));
                 }
-                let next_best_state_double = get_best_game_state(curr_roll_games);
-                next_best_states_double.insert(roll, next_best_state_double);
+                let next_best_state_multi = get_best_game_state(curr_roll_games);
+                next_best_states_multi.insert(roll, next_best_state_multi);
             }
-            let win_chance_double = get_win_chance_double(
+            let win_chance_multi = get_win_chance_multi(
                 game_state,
-                roll_probs_double,
+                roll_probs_multi,
                 game_db,
-                &next_best_states_double,
+                &next_best_states_multi,
             );
 
-            let win_chance = win_chance_single.max(win_chance_double);
+            let win_chance = win_chance_single.max(win_chance_multi);
             let child_count = next_valid_states_hm.len();
             let game_stats = GameStats {
                 win_chance,
                 win_chance_single,
-                win_chance_all: win_chance_double,
+                win_chance_multi,
                 child_count,
                 next_states: next_valid_states_hm,
                 optimal_next_states_single: next_best_states_single,
-                optimal_next_states_double: next_best_states_double,
+                optimal_next_states_multi: next_best_states_multi,
             };
             game_db.insert(game_state.clone(), game_stats);
             &game_stats
         }
     }
 }
+
+fn get_best_game_state(game: Vec<(GameState, GameStats)>) -> &'static GameState<'static> {
+    let mut best_game_state = &game[0].0;
+    let mut best_game_stats = &game[0].1;
+    for (game_state, game_stats) in game {
+        if game_stats.win_chance > best_game_stats.win_chance {
+            best_game_state = &game_state;
+            best_game_stats = &game_stats;
+        }
+    }
+    best_game_state
+}
+
+fn get_single_legality(game_state: &GameState) -> bool {
+    let tiles = &game_state.tiles;
+    let die_vals = &game_state.die_vals;
+    tiles.len() > 0 && tiles.iter().max().unwrap() <= die_vals.iter().max().unwrap()
+}
+
 
 fn get_next_legal_state_hm(
     game_state: &GameState,
@@ -235,19 +259,19 @@ fn get_next_legal_state_hm(
     hm
 }
 
-fn get_win_chance_double(
+fn get_win_chance_multi(
     game_state: &GameState,
-    roll_probs_double: &HashMap<Uns, Float>,
+    roll_probs_multi: &HashMap<Uns, Float>,
     game_db: &HashMap<GameState, GameStats>,
-    next_best_states_double: &HashMap<Uns, GameState>,
+    next_best_states_multi: &HashMap<Uns, GameState>,
 ) -> Float {
     let tiles = &game_state.tiles;
     if tiles.len() == 0 {
         return 1.; // todo check if this is correct
     }
     let mut prob = 0.;
-    for (roll, roll_prob) in roll_probs_double {
-        let best_state = next_best_states_double.get(roll).unwrap();
+    for (roll, roll_prob) in roll_probs_multi {
+        let best_state = next_best_states_multi.get(roll).unwrap();
         prob += roll_prob * game_db.get(best_state).unwrap().win_chance;
     }
     prob
@@ -284,6 +308,52 @@ fn get_removed_tiles(tiles: &Vec<Uns>, trp: &Vec<Uns>) -> Option<Vec<Uns>> {
         }
     }
     Some(new_tiles)
+}
+
+///// SETUP FUNCTIONS /////
+
+fn get_roll_counts(values: &Vec<Uns>, count: Uns, sum: Uns) -> Vec<Uns> {
+    let mut counts: Vec<Uns> = Vec::new();
+    if count == 0 {
+        counts.push(sum);
+    } else {
+        for value in values {
+            counts.append(&mut get_roll_counts(&values, count - 1, sum + value));
+        }
+    }
+    counts
+}
+
+/**
+ * returns an unmuted sorted vector
+ */
+fn get_srt<T: Copy + Ord>(a: &[T]) -> Vec<T> {
+    let mut b = a.to_vec();
+    b.sort_unstable();
+    b
+}
+
+fn get_srt_dedup_keys<T, U>(hm1: &HashMap<Uns, T>, hm2: &HashMap<Uns, U>) -> Vec<Uns> {
+    let mut x = hm1.keys().map(|&x| x).collect::<Vec<Uns>>();
+    x.append(&mut hm2.keys().map(|&x| x).collect::<Vec<Uns>>());
+    x = get_srt(&x);
+    x.dedup();
+    x
+}
+
+fn get_roll_probabilities(rolls: &Vec<Uns>) -> HashMap<Uns, Float> {
+    let mut roll_counts: HashMap<Uns, usize> = HashMap::new();
+    let mut roll_probabilities: HashMap<Uns, Float> = HashMap::new();
+    let mut total_rolls = 0;
+    for roll in rolls {
+        let count = roll_counts.entry(*roll).or_insert(0);
+        *count += 1;
+        total_rolls += 1;
+    }
+    for (roll, count) in roll_counts {
+        roll_probabilities.insert(roll, count as Float / total_rolls as Float);
+    }
+    roll_probabilities
 }
 
 fn get_tile_removal_possibilities(
@@ -326,58 +396,4 @@ fn r_tile_removal(tiles: &[Uns], targ: &Uns, removal_max: &Uns) -> Vec<Vec<Uns>>
         }
     }
     removals
-}
-
-///// SETUP FUNCTIONS /////
-
-fn get_roll_counts(values: &Vec<Uns>, count: Uns, sum: Uns) -> Vec<Uns> {
-    let mut counts: Vec<Uns> = Vec::new();
-    if count == 0 {
-        counts.push(sum);
-    } else {
-        for value in values {
-            counts.append(&mut get_roll_counts(&values, count - 1, sum + value));
-        }
-    }
-    counts
-}
-
-/**
- * returns an unmuted sorted vector
- */
-fn get_srt<T: Copy + Ord>(a: &[T]) -> Vec<T> {
-    let mut b = a.to_vec();
-    b.sort_unstable();
-    b
-}
-
-fn get_srt_dedup_keys<T, U>(hm1: &HashMap<Uns, T>, hm2: &HashMap<Uns, U>) -> Vec<Uns> {
-    let mut x = hm1.keys().map(|&x| x).collect::<Vec<Uns>>();
-    x.append(&mut hm2.keys().map(|&x| x).collect::<Vec<Uns>>());
-    x = get_srt(&x);
-    x.dedup();
-    x
-}
-
-fn get_roll_probabilities_double(rolls: &Vec<Uns>) -> HashMap<Uns, Float> {
-    let mut roll_counts: HashMap<Uns, u32> = HashMap::new();
-    let mut roll_probabilities: HashMap<Uns, Float> = HashMap::new();
-    let mut total_rolls: u32 = 0;
-    for roll in rolls {
-        let count = roll_counts.entry(*roll).or_insert(0);
-        *count += 1;
-        total_rolls += 1;
-    }
-    for (roll, count) in roll_counts {
-        roll_probabilities.insert(roll, count as Float / total_rolls as Float);
-    }
-    roll_probabilities
-}
-
-fn get_roll_probabilities_single(die_vals: &Vec<Uns>) -> HashMap<Uns, Float> {
-    let mut roll_probs = HashMap::new();
-    for &die_val in die_vals {
-        roll_probs.insert(die_val, 1.0 / die_vals.len() as Float);
-    }
-    roll_probs
 }
