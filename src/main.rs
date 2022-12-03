@@ -1,5 +1,8 @@
 extern crate rustop;
 
+type Uns = u8;
+type Float = f64;
+
 use std::{collections::HashMap, hash::Hash};
 
 // todo implement
@@ -11,33 +14,31 @@ use std::{collections::HashMap, hash::Hash};
 
 #[derive(Debug, Clone)]
 struct GameStats <'g_state> {
-    win_chance: f64,        // chance of winning
-    win_chance_single: f64, // chance of winning with a single die
-    win_chance_all: f64, // chance of winning with all dice
+    win_chance: Float,        // chance of winning
+    win_chance_single: Float, // chance of winning with a single die
+    win_chance_all: Float, // chance of winning with all dice
 
     child_count: usize,                                  // number of children
-    next_states: HashMap<u8, Vec<&'g_state GameState<'g_state>>>,          // all possible next states keyed by roll
-    optimal_next_states_single: HashMap<u8, &'g_state GameState<'g_state>>, // optimal next states with one die
-    optimal_next_states_double: HashMap<u8, &'g_state GameState<'g_state>>, // optimal next states with two dice
+    next_states: HashMap<Uns, Vec<&'g_state GameState<'g_state>>>,          // all possible next states keyed by roll
+    optimal_next_states_single: HashMap<Uns, &'g_state GameState<'g_state>>, // optimal next states with one die
+    optimal_next_states_double: HashMap<Uns, &'g_state GameState<'g_state>>, // optimal next states with two dice
 }
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug)] // todo remove debug
 struct GameState <'g_rules> {
-    die_vals: &'g_rules Vec<u8>, // all possible die values
-    die_cnt: &'g_rules u8,       // number of dice
-    tiles: &'g_rules Vec<u8>,    // remaining tiles
-    max_remove: &'g_rules u8,    // max number of tiles to remove, 0 for unlimited
+    die_vals: &'g_rules Vec<Uns>, // all possible die values
+    die_cnt: &'g_rules Uns,       // number of dice
+    tiles: &'g_rules Vec<Uns>,    // remaining tiles
+    max_remove: &'g_rules Uns,    // max number of tiles to remove, 0 for unlimited
 }
 
 // todo implement
 // struct GameData {
-//     trphm: HashMap<u8, Vec<Vec<u8>>>,
+//     trphm: HashMap<us, Vec<Vec<us>>>,
 //     game_db: HashMap<GameState, GameStats>,
-//     roll_probs_single: HashMap<u8, f64>,
-//     roll_probs_double: HashMap<u8, f64>,
+//     roll_probs_single: HashMap<us, float>,
+//     roll_probs_double: HashMap<us, float>,
 // }
-
-
 
 fn get_best_game_state(
     game: Vec<(GameState, GameStats)>,
@@ -53,14 +54,15 @@ fn get_best_game_state(
     best_game_state
 }
 fn main() {
-    let die_vals: Vec<u8> = [1, 2, 3, 4, 5, 6].to_vec();
-    let die_cnt: u8 = 2;
-    let tiles: Vec<u8> = get_srt(&[1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    let max_remove: u8 = 0;
+    // TODO make these command line args
+    let die_vals = vec![1, 2, 3, 4, 5, 6];
+    let die_cnt = 2;
+    let tiles = get_srt(&[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    let max_remove = 0;
 
     // todo probably can optimize with this sorted
     let all_rolls = get_srt(&get_roll_counts(&die_vals, die_cnt, 0));
-    let roll_probs_double = get_roll_probabilities(&all_rolls);
+    let roll_probs_double = get_roll_probabilities_double(&all_rolls);
     let roll_probs_single = get_roll_probabilities_single(&die_vals);
     let roll_possib = get_srt_dedup_keys(&roll_probs_double, &roll_probs_single);
 
@@ -90,28 +92,6 @@ fn main() {
     println!("{:?}", x);
 }
 
-fn get_srt<T: Clone + Ord>(a: &[T]) -> Vec<T> {
-    let mut b = a.to_vec();
-    b.sort_unstable();
-    b
-}
-
-fn get_srt_dedup_keys(hm1: &HashMap<u8, f64>, hm2: &HashMap<u8, f64>) -> Vec<u8> {
-    let mut x = hm1.keys().map(|&x| x).collect::<Vec<u8>>();
-    x.append(&mut hm2.keys().map(|&x| x).collect::<Vec<u8>>());
-    x = get_srt(&x);
-    x.dedup();
-    x
-}
-
-fn get_roll_probabilities_single(die_vals: &Vec<u8>) -> HashMap<u8, f64> {
-    let mut roll_probs = HashMap::new();
-    for &die_val in die_vals {
-        roll_probs.insert(die_val, 1.0 / die_vals.len() as f64);
-    }
-    roll_probs
-}
-
 fn get_single_legality(game_state: &GameState) -> bool {
     let tiles = &game_state.tiles;
     let die_vals = &game_state.die_vals;
@@ -120,9 +100,9 @@ fn get_single_legality(game_state: &GameState) -> bool {
 
 fn r_solve(
     game_state: &GameState,
-    roll_probs_double: &HashMap<u8, f64>,
-    roll_probs_single: &HashMap<u8, f64>,
-    trphm: &HashMap<u8, Vec<Vec<u8>>>,
+    roll_probs_double: &HashMap<Uns, Float>,
+    roll_probs_single: &HashMap<Uns, Float>,
+    trphm: &HashMap<Uns, Vec<Vec<Uns>>>,
     game_db: &mut HashMap<GameState, GameStats>,
 ) -> &'static GameStats {
     let existing_game = game_db.get(game_state);
@@ -228,8 +208,8 @@ fn r_solve(
 
 fn get_next_legal_state_hm(
     game_state: &GameState,
-    trphm: &HashMap<u8, Vec<Vec<u8>>>,
-) -> HashMap<u8, Vec<GameState>> {
+    trphm: &HashMap<Uns, Vec<Vec<Uns>>>,
+) -> HashMap<Uns, Vec<GameState>> {
     let mut hm = HashMap::new();
     let tiles = &game_state.tiles;
     if tiles.len() == 0 {
@@ -257,10 +237,10 @@ fn get_next_legal_state_hm(
 
 fn get_win_chance_double(
     game_state: &GameState,
-    roll_probs_double: &HashMap<u8, f64>,
+    roll_probs_double: &HashMap<Uns, Float>,
     game_db: &HashMap<GameState, GameStats>,
-    next_best_states_double: &HashMap<u8, GameState>,
-) -> f64 {
+    next_best_states_double: &HashMap<Uns, GameState>,
+) -> Float {
     let tiles = &game_state.tiles;
     if tiles.len() == 0 {
         return 1.; // todo check if this is correct
@@ -275,10 +255,10 @@ fn get_win_chance_double(
 
 fn get_win_chance_single(
     game_state: &GameState,
-    roll_probs_single: &HashMap<u8, f64>,
+    roll_probs_single: &HashMap<Uns, Float>,
     game_db: &HashMap<GameState, GameStats>,
-    next_best_states_single: &HashMap<u8, GameState>,
-) -> f64 {
+    next_best_states_single: &HashMap<Uns, GameState>,
+) -> Float {
     let tiles = &game_state.tiles;
     if tiles.len() == 0 {
         return 1.; // todo check if this is correct
@@ -294,7 +274,7 @@ fn get_win_chance_single(
     prob
 }
 
-fn get_removed_tiles(tiles: &Vec<u8>, trp: &Vec<u8>) -> Option<Vec<u8>> {
+fn get_removed_tiles(tiles: &Vec<Uns>, trp: &Vec<Uns>) -> Option<Vec<Uns>> {
     let mut new_tiles = tiles.clone();
     for &tile in trp {
         if new_tiles.contains(&tile) {
@@ -307,20 +287,20 @@ fn get_removed_tiles(tiles: &Vec<u8>, trp: &Vec<u8>) -> Option<Vec<u8>> {
 }
 
 fn get_tile_removal_possibilities(
-    tiles: &Vec<u8>,
-    possible_rolls: &Vec<u8>,
-    removal_max: &u8,
-) -> HashMap<u8, Vec<Vec<u8>>> {
-    let mut trp: HashMap<u8, Vec<Vec<u8>>> = HashMap::new();
+    tiles: &Vec<Uns>,
+    possible_rolls: &Vec<Uns>,
+    removal_max: &Uns,
+) -> HashMap<Uns, Vec<Vec<Uns>>> {
+    let mut trp: HashMap<Uns, Vec<Vec<Uns>>> = HashMap::new();
     for roll in possible_rolls {
-        let removals: Vec<Vec<u8>> = r_tile_removal(tiles, roll, &removal_max);
+        let removals: Vec<Vec<Uns>> = r_tile_removal(tiles, roll, &removal_max);
         trp.insert(*roll, removals);
     }
     trp
 }
 
-fn r_tile_removal(tiles: &[u8], targ: &u8, removal_max: &u8) -> Vec<Vec<u8>> {
-    let mut removals: Vec<Vec<u8>> = Vec::new();
+fn r_tile_removal(tiles: &[Uns], targ: &Uns, removal_max: &Uns) -> Vec<Vec<Uns>> {
+    let mut removals: Vec<Vec<Uns>> = Vec::new();
     if targ == &0 {
         removals.push(Vec::new());
         return removals;
@@ -348,23 +328,10 @@ fn r_tile_removal(tiles: &[u8], targ: &u8, removal_max: &u8) -> Vec<Vec<u8>> {
     removals
 }
 
-fn get_roll_probabilities(rolls: &Vec<u8>) -> HashMap<u8, f64> {
-    let mut roll_counts: HashMap<u8, u32> = HashMap::new();
-    let mut roll_probabilities: HashMap<u8, f64> = HashMap::new();
-    let mut total_rolls: u32 = 0;
-    for roll in rolls {
-        let count = roll_counts.entry(*roll).or_insert(0);
-        *count += 1;
-        total_rolls += 1;
-    }
-    for (roll, count) in roll_counts {
-        roll_probabilities.insert(roll, count as f64 / total_rolls as f64);
-    }
-    roll_probabilities
-}
+///// SETUP FUNCTIONS /////
 
-fn get_roll_counts(values: &Vec<u8>, count: u8, sum: u8) -> Vec<u8> {
-    let mut counts: Vec<u8> = Vec::new();
+fn get_roll_counts(values: &Vec<Uns>, count: Uns, sum: Uns) -> Vec<Uns> {
+    let mut counts: Vec<Uns> = Vec::new();
     if count == 0 {
         counts.push(sum);
     } else {
@@ -373,4 +340,44 @@ fn get_roll_counts(values: &Vec<u8>, count: u8, sum: u8) -> Vec<u8> {
         }
     }
     counts
+}
+
+/**
+ * returns an unmuted sorted vector
+ */
+fn get_srt<T: Copy + Ord>(a: &[T]) -> Vec<T> {
+    let mut b = a.to_vec();
+    b.sort_unstable();
+    b
+}
+
+fn get_srt_dedup_keys<T, U>(hm1: &HashMap<Uns, T>, hm2: &HashMap<Uns, U>) -> Vec<Uns> {
+    let mut x = hm1.keys().map(|&x| x).collect::<Vec<Uns>>();
+    x.append(&mut hm2.keys().map(|&x| x).collect::<Vec<Uns>>());
+    x = get_srt(&x);
+    x.dedup();
+    x
+}
+
+fn get_roll_probabilities_double(rolls: &Vec<Uns>) -> HashMap<Uns, Float> {
+    let mut roll_counts: HashMap<Uns, u32> = HashMap::new();
+    let mut roll_probabilities: HashMap<Uns, Float> = HashMap::new();
+    let mut total_rolls: u32 = 0;
+    for roll in rolls {
+        let count = roll_counts.entry(*roll).or_insert(0);
+        *count += 1;
+        total_rolls += 1;
+    }
+    for (roll, count) in roll_counts {
+        roll_probabilities.insert(roll, count as Float / total_rolls as Float);
+    }
+    roll_probabilities
+}
+
+fn get_roll_probabilities_single(die_vals: &Vec<Uns>) -> HashMap<Uns, Float> {
+    let mut roll_probs = HashMap::new();
+    for &die_val in die_vals {
+        roll_probs.insert(die_val, 1.0 / die_vals.len() as Float);
+    }
+    roll_probs
 }
