@@ -13,7 +13,7 @@ struct Trunk {
     // todo prob reference GameState owned by the HashMap later
     start_tiles: Tiles,
 
-    game_db: HashMap<Tiles, GameStats>, // contains all possible child game states
+    game_db: HashMap<Tiles, Float>, // contains all possible child game states
 }
 
 #[derive(Debug)]
@@ -23,11 +23,6 @@ struct GameMeta {
     trphm: HashMap<Uns, Vec<Tiles>>, // tile removal possibilities hash map
     roll_probs_single: HashMap<Uns, Float>, // probabilities of key if a single die is rolled
     roll_probs_multi: HashMap<Uns, Float>, // probabilities of key if multiple dice are rolled
-}
-
-#[derive(Debug, Clone, Copy)]
-struct GameStats {
-    win_chance: Float, // chance of winning
 }
 
 /// TODOS
@@ -62,7 +57,7 @@ fn main() {
     // println!("roll_probabilities_single: {:?}", roll_probs_single);
     // println!("trphm: {:?}", trphm);
 
-    let mut game_db: HashMap<Tiles, GameStats> = HashMap::new();
+    let mut game_db: HashMap<Tiles, Float> = HashMap::new();
     let game_meta = GameMeta {
         die_max,
         trphm,
@@ -97,8 +92,8 @@ fn get_readable_string(trunk: &Trunk) -> String {
 fn r_solve(
     tiles: Tiles,
     game_meta: &GameMeta,
-    game_db: &mut HashMap<Tiles, GameStats>,
-) -> GameStats {
+    game_db: &mut HashMap<Tiles, Float>,
+) -> Float {
     let tiles = tiles.clone();
     let existing_game = game_db.get(&tiles);
     match existing_game {
@@ -107,9 +102,9 @@ fn r_solve(
         }
         None => {
             if tiles.len() == 0 {
-                let x = GameStats { win_chance: 1.0 };
-                game_db.insert(tiles, x.clone());
-                return x;
+                let win = 1.;
+                game_db.insert(tiles, win);
+                return win;
             }
             /*
             If the game doesn't exist in the hm, we need to create it
@@ -144,15 +139,12 @@ fn r_solve(
             for (roll, state_stat) in solved_next_legal_states_hm {
                 let mut curr_best_chance = 0.;
                 let mut curr_best_state: Tiles = vec![];
-                let mut curr_best_stats = GameStats {
-                    // TODO remove lol
-                    win_chance: 0.,
-                };
-                for (state, stat) in state_stat {
-                    if stat.win_chance > curr_best_chance {
-                        curr_best_chance = stat.win_chance;
+                let mut curr_best_win_chance = 0.;
+                for (state, win_chance) in state_stat {
+                    if win_chance > curr_best_chance {
+                        curr_best_chance = win_chance;
                         curr_best_state = state;
-                        curr_best_stats = stat;
+                        curr_best_win_chance = win_chance;
                     }
                 }
                 if get_single_legality(&tiles, &game_meta.die_max) {
@@ -160,7 +152,7 @@ fn r_solve(
                     match single_chance {
                         Some(single_chance) => {
                             best_states_single_hm.insert(roll, curr_best_state.clone());
-                            win_chance_single += curr_best_stats.win_chance * single_chance;
+                            win_chance_single += curr_best_win_chance * single_chance;
                         }
                         None => {}
                     }
@@ -169,16 +161,14 @@ fn r_solve(
                 match multi_chance {
                     Some(multi_chance) => {
                         best_states_multi_hm.insert(roll, curr_best_state.clone());
-                        win_chance_multi += curr_best_stats.win_chance * multi_chance;
+                        win_chance_multi += curr_best_win_chance * multi_chance;
                     }
                     None => {}
                 }
             }
-            let game_stats = GameStats {
-                win_chance: win_chance_single.max(win_chance_multi),
-            };
-            game_db.insert(tiles, game_stats);
-            game_stats
+            let win_chance = win_chance_single.max(win_chance_multi);
+            game_db.insert(tiles, win_chance);
+            win_chance
         }
     }
 }
@@ -217,13 +207,13 @@ fn get_next_legal_states_all(
 fn get_all_stats_from_states(
     states: &Vec<Tiles>,
     game_meta: &GameMeta,
-    game_db: &mut HashMap<Tiles, GameStats>,
-) -> Vec<(Tiles, GameStats)> {
+    game_db: &mut HashMap<Tiles, Float>,
+) -> Vec<(Tiles, Float)> {
     let mut res = Vec::new();
     for state in states {
         let state = state.clone();
         let stats = r_solve(state.clone(), game_meta, game_db);
-        res.push((state, stats.clone()));
+        res.push((state, stats));
     }
     res
 }
@@ -231,8 +221,8 @@ fn get_all_stats_from_states(
 fn get_all_stats_from_hm(
     state_hm: &HashMap<Uns, Vec<Tiles>>,
     game_meta: &GameMeta,
-    game_db: &mut HashMap<Tiles, GameStats>,
-) -> HashMap<Uns, Vec<(Tiles, GameStats)>> {
+    game_db: &mut HashMap<Tiles, Float>,
+) -> HashMap<Uns, Vec<(Tiles, Float)>> {
     let mut hm = HashMap::new();
     for (roll, game_states) in state_hm {
         let games = get_all_stats_from_states(&game_states.clone(), game_meta, game_db);
