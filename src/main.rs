@@ -55,12 +55,17 @@ async fn main() -> io::Result<()> {
         "Win chance: {:.2}%",
         trunk.game_db.get(&trunk.game_meta.tiles).unwrap() * 100.0
     );
+    println!("num of game entries: {}", trunk.game_db.len());
+    let w = trunk.game_meta.trphm.clone().into_values().flatten().collect::<Vec<_>>().len();
+    println!("trp count: {:?}", w);
+    // println!("{:?}", &trunk.game_meta.trphm);
     Ok(())
 }
 
 #[async_recursion]
 async fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
-    if tiles.len() < 2 {
+    if tiles.len() <= 2 {
+        println!("Raw solve for {} tiles", &tiles.len());
         let mut res = HashMap::new();
         r_solve(tiles, &game_meta, &mut res);
         return res;
@@ -71,21 +76,20 @@ async fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float>
     for chunk in chunks {
         let curr_tiles = chunk.to_vec();
         let curr_game_meta = game_meta.clone();
-        let handle = thread::spawn(move || async {
-            // let mut curr_result = HashMap::new();
-            // r_solve(curr_tiles, &curr_game_meta, &mut curr_result);
-            // curr_result
-            split_solve(curr_tiles, curr_game_meta).await
+        let handle = thread::spawn(move || {
+            split_solve(curr_tiles, curr_game_meta)
         });
         handles.push(handle);
     }
 
     let mut result: HashMap<Tiles, Float> = HashMap::new();
+    
     for handle in handles {
         let curr_result = handle.join().unwrap().await;
         result.extend(curr_result);
     }
     r_solve(tiles, &game_meta, &mut result);
+    println!("result for {} tiles\n", (result.len() as f64).log2());
     result
 }
 
