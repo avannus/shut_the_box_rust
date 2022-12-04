@@ -60,28 +60,29 @@ async fn main() -> io::Result<()> {
 
 #[async_recursion]
 async fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
-    if tiles.len() < 3 {
+    if tiles.len() < 4 {
         let mut res = HashMap::new();
         r_solve(tiles, &game_meta, &mut res);
         return res;
     }
-    let worker_count = 3;
+    let worker_count = 2;
     let chunks = tiles.chunks((tiles.len() / worker_count).max(1));
     let mut handles = Vec::new();
     for chunk in chunks {
         let curr_tiles = chunk.to_vec();
         let curr_game_meta = game_meta.clone();
-        let handle = thread::spawn(move || {
-            let mut curr_result = HashMap::new();
-            split_solve(curr_tiles, curr_game_meta);
-            curr_result
+        let handle = thread::spawn(move || async {
+            // let mut curr_result = HashMap::new();
+            // r_solve(curr_tiles, &curr_game_meta, &mut curr_result);
+            // curr_result
+            split_solve(curr_tiles, curr_game_meta).await
         });
         handles.push(handle);
     }
 
     let mut result: HashMap<Tiles, Float> = HashMap::new();
     for handle in handles {
-        let curr_result = handle.join().unwrap();
+        let curr_result = handle.join().unwrap().await;
         result.extend(curr_result);
     }
     r_solve(tiles, &game_meta, &mut result);
