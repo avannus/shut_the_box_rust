@@ -1,17 +1,15 @@
 extern crate rustop;
 
-type Uns = u8;
+type Uns = u8; // or u16, u32, u64, usize, primary use of memory
 type Float = f64;
 type Tiles = Vec<Uns>;
 
+use rustop::opts;
 use std::collections::HashMap;
 
 #[derive(Debug)]
 struct Trunk {
     game_meta: GameMeta,
-
-    // todo prob reference GameState owned by the HashMap later
-    start_tiles: Tiles,
 
     game_db: HashMap<Tiles, Float>, // contains all possible child game states
 }
@@ -19,10 +17,19 @@ struct Trunk {
 #[derive(Debug)]
 struct GameMeta {
     die_max: Uns, // maximum die value
+    start_tiles: Tiles,
 
     trphm: HashMap<Uns, Vec<Tiles>>, // tile removal possibilities hash map
     roll_probs_single: HashMap<Uns, Float>, // probabilities of key if a single die is rolled
     roll_probs_multi: HashMap<Uns, Float>, // probabilities of key if multiple dice are rolled
+}
+
+struct InitData {
+    die_vals: Vec<Uns>,
+    die_cnt: Uns,
+    die_max: Uns,
+    start_tiles: Tiles,
+    max_remove: Uns,
 }
 
 /// TODOS
@@ -34,44 +41,104 @@ struct GameMeta {
 /// Remove #[derive(Debug)] from structs
 fn main() {
     // TODO make these command line args
-    let die_vals = vec![1, 2, 3, 4, 5, 6];
+
+    let game_meta = get_game_meta();
+
+    let mut game_db: HashMap<Tiles, Float> = HashMap::new();
+    // fill out game_db
+    r_solve(game_meta.start_tiles.clone(), &game_meta, &mut game_db);
+    let trunk = Trunk { game_meta, game_db };
+    println!("\n\nGame Data:\n{}", get_readable_string(&trunk));
+}
+
+fn get_die_vals(die_min: Uns, die_max: Uns, die_val_input: Vec<Uns>) -> Vec<Uns> {
+    let mut die_vals;
+    if die_val_input.len() > 0 {
+        die_vals = die_val_input;
+    } else {
+        die_vals = Vec::new();
+        for i in die_min..(die_max + 1) {
+            die_vals.push(i);
+        }
+    }
+    die_vals
+}
+
+fn get_start_tiles(tile_min: Uns, tile_max: Uns, tile_input: Vec<Uns>) -> Tiles {
+    let mut start_tiles;
+    if tile_input.len() > 0 {
+        start_tiles = tile_input;
+    } else {
+        start_tiles = Vec::new();
+        for i in tile_min..(tile_max + 1) {
+            start_tiles.push(i);
+        }
+    }
+    start_tiles
+}
+
+fn parse_args() -> InitData {
+    let (args, _) = opts! {
+        synopsis "A simple example.";
+        version "1.0";
+        opt d_min: Uns=1, desc: "Minimum die value, increments by 1";
+        opt d_max: Uns=6, desc: "Maximum die value, increments by 1";
+        opt d_direct: Vec<Uns>, desc: "Die values per die, ignores min/max", multi:true;
+        opt die_cnt: Uns=2, desc: "Number of dice";
+        opt t_min: Uns=1, desc: "Minimum tile value, increments by 1";
+        opt t_max: Uns=9, desc: "Maximum tile value, increments by 1";
+        opt t_direct: Vec<Uns>, desc: "Starting tiles, ignores min_tile and max_tile", multi:true;
+        opt max_remove: Uns=0, desc: "Maximum number of tiles to remove per turn, 0 for no limit";
+    }
+    .parse_or_exit();
+
+    let die_vals = get_die_vals(args.d_min, args.d_max, args.d_direct);
+    let die_cnt = args.die_cnt;
     let die_max = get_max(&die_vals);
-    let die_cnt = 2;
-    let start_tiles = get_srt(&[1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    let max_remove = 0;
+
+    let start_tiles = get_start_tiles(args.t_min, args.t_max, args.t_direct);
+    let max_remove = args.max_remove;
+    InitData {
+        die_vals,
+        die_cnt,
+        die_max,
+        start_tiles,
+        max_remove,
+    }
+}
+
+fn get_roll_probs(die_vals: &Vec<Uns>, die_cnt: Uns, sum: Uns) -> HashMap<Uns, Float> {
+    let rolls = get_srt(&get_roll_counts(die_vals, die_cnt, sum));
+    get_roll_probabilities(&rolls)
+}
+
+fn get_game_meta() -> GameMeta {
+    let init_data = parse_args();
 
     // todo probably can optimize with this sorted
     // todo eventually make this where the num dice rolled is totally dynamic
-    let all_multi_rolls = get_srt(&get_roll_counts(&die_vals, die_cnt, 0));
-    let roll_probs_multi = get_roll_probabilities(&all_multi_rolls);
+    let roll_probs_multi = get_roll_probs(&init_data.die_vals, init_data.die_cnt, 0);
 
-    let all_single_rolls = get_srt(&get_roll_counts(&die_vals, 1, 0));
-    let roll_probs_single = get_roll_probabilities(&all_single_rolls);
+    println!("1{:?}",&init_data.die_vals);
+    let roll_probs_single = get_roll_probs(&init_data.die_vals, 1, 0);
 
     let roll_possib = get_srt_dedup_keys(&roll_probs_multi, &roll_probs_single);
 
-    let trphm = get_tile_removal_possibilities(&start_tiles, &roll_possib, &max_remove);
-    // println!("roll_counts: {:?}", all_multi_rolls);
-    // println!("possible_rolls: {:?}", roll_possib);
-    // println!("roll_probabilities: {:?}", roll_probs_multi);
-    // println!("roll_probabilities_single: {:?}", roll_probs_single);
-    // println!("trphm: {:?}", trphm);
+    println!("2{:?}",&init_data.die_vals);
+    let trphm =
+        get_tile_removal_possibilities(&init_data.start_tiles, &roll_possib, &init_data.max_remove);
 
-    let mut game_db: HashMap<Tiles, Float> = HashMap::new();
-    let game_meta = GameMeta {
-        die_max,
+    println!("3{:?}",&init_data.die_vals);
+
+    print!("trphm: {:?}", &trphm);
+
+    GameMeta {
+        die_max: init_data.die_max,
         trphm,
         roll_probs_single,
         roll_probs_multi,
-    };
-    // fill out game_db
-    r_solve(start_tiles.clone(), &game_meta, &mut game_db);
-    let trunk = Trunk {
-        game_meta,
-        start_tiles,
-        game_db,
-    };
-    println!("\n\nGame Data:\n{}", get_readable_string(&trunk));
+        start_tiles: init_data.start_tiles,
+    }
 }
 
 fn get_readable_string(trunk: &Trunk) -> String {
@@ -79,21 +146,17 @@ fn get_readable_string(trunk: &Trunk) -> String {
     s.push_str("game_meta:\n ");
     s.push_str(&format!("{:?}", trunk.game_meta));
     s.push_str("\nstart_tiles:\n ");
-    s.push_str(&format!("{:?}", trunk.start_tiles));
+    s.push_str(&format!("{:?}", trunk.game_meta.start_tiles));
     s.push_str("\ngame_db entry for start tiles:\n ");
     s.push_str(&format!(
         "{:?}",
-        trunk.game_db.get(&trunk.start_tiles).unwrap()
+        trunk.game_db.get(&trunk.game_meta.start_tiles).unwrap()
     ));
     s.push_str("\n");
     s
 }
 
-fn r_solve(
-    tiles: Tiles,
-    game_meta: &GameMeta,
-    game_db: &mut HashMap<Tiles, Float>,
-) -> Float {
+fn r_solve(tiles: Tiles, game_meta: &GameMeta, game_db: &mut HashMap<Tiles, Float>) -> Float {
     let tiles = tiles.clone();
     let existing_game = game_db.get(&tiles);
     match existing_game {
@@ -302,8 +365,12 @@ fn get_tile_removal_possibilities(
 ) -> HashMap<Uns, Vec<Tiles>> {
     let mut trp: HashMap<Uns, Vec<Tiles>> = HashMap::new();
     for roll in possible_rolls {
+        if roll > &0 {
         let removals: Vec<Tiles> = r_tile_removal(tiles, roll, &removal_max);
-        trp.insert(*roll, removals);
+            trp.insert(*roll, removals);
+        } else {
+            trp.insert(*roll, vec![vec![0]]);
+        }
     }
     trp
 }
