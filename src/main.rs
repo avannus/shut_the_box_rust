@@ -1,9 +1,11 @@
-use mini_redis::{Result};
 use async_recursion::async_recursion;
+use async_std::task::JoinHandle;
 use rustop::opts;
+use tokio::task;
+use tokio::runtime::Builder;
+use tokio::runtime::Runtime;
 use std::collections::HashMap;
-use async_std::task;
-use std::thread;
+use std::{thread, io};
 
 type Uns = u16; // any unsigned int should work, primary use of memory
 type Float = f64;
@@ -42,13 +44,12 @@ struct InitData {
 ///     Allow to roll any number of dice, not just multi and single
 /// Remove #[derive(Debug)] from structs
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> io::Result<()> {
     // TODO make these command line args
 
     let game_meta = get_game_meta();
 
     let game_db = split_solve(game_meta.tiles.clone(), game_meta.clone()).await;
-
     let trunk = Trunk { game_meta, game_db };
     println!(
         "Win chance: {:.2}%",
@@ -64,21 +65,27 @@ async fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float>
         r_solve(tiles, &game_meta, &mut res);
         return res;
     }
-    let left = tiles[0..tiles.len() / 2].to_vec();
-    let right = tiles[tiles.len() / 2..tiles.len()].to_vec();
-    let left_meta = game_meta.clone();
-    let right_meta = game_meta.clone();
-    let left_future = split_solve(left, left_meta);
-    let right_future = split_solve(right, right_meta);
-    let left_task = task::spawn(left_future);
-    let right_task = task::spawn(right_future);
-    let left_res = left_task.await;
-    let right_res = right_task.await;
-    // join left and right
-    let mut combined = left_res;
-    combined.extend(right_res);
-    r_solve(tiles, &game_meta, &mut combined);
-    combined
+    let worker_count = 3;
+    let chunks = tiles.chunks((tiles.len() / worker_count).max(1));
+    let mut handles = Vec::new();
+    for chunk in chunks {
+        let curr_tiles = chunk.to_vec();
+        let curr_game_meta = game_meta.clone();
+        let handle = thread::spawn(move || {
+            let mut curr_result = HashMap::new();
+            split_solve(curr_tiles, curr_game_meta);
+            curr_result
+        });
+        handles.push(handle);
+    }
+
+    let mut result: HashMap<Tiles, Float> = HashMap::new();
+    for handle in handles {
+        let curr_result = handle.join().unwrap();
+        result.extend(curr_result);
+    }
+    r_solve(tiles, &game_meta, &mut result);
+    result
 }
 
 #[allow(dead_code)]
