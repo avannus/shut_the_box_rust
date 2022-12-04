@@ -102,9 +102,9 @@ fn r_solve(
         }
         None => {
             if tiles.len() == 0 {
-                let win = 1.;
-                game_db.insert(tiles, win);
-                return win;
+                let win_chance = 1.;
+                game_db.insert(tiles, win_chance);
+                return win_chance;
             }
             /*
             If the game doesn't exist in the hm, we need to create it
@@ -137,14 +137,12 @@ fn r_solve(
             let mut win_chance_single = 0.;
             let mut win_chance_multi = 0.;
             for (roll, state_stat) in solved_next_legal_states_hm {
-                let mut curr_best_chance = 0.;
-                let mut curr_best_state: Tiles = vec![];
                 let mut curr_best_win_chance = 0.;
+                let mut curr_best_state: Tiles = vec![];
                 for (state, win_chance) in state_stat {
-                    if win_chance > curr_best_chance {
-                        curr_best_chance = win_chance;
-                        curr_best_state = state;
+                    if win_chance > curr_best_win_chance {
                         curr_best_win_chance = win_chance;
+                        curr_best_state = state;
                     }
                 }
                 if get_single_legality(&tiles, &game_meta.die_max) {
