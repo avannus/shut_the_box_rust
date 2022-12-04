@@ -1,3 +1,4 @@
+use mini_redis::{Result};
 use async_recursion::async_recursion;
 use rustop::opts;
 use std::collections::HashMap;
@@ -38,24 +39,25 @@ struct InitData {
 /// General Improvements
 ///     Allow to roll any number of dice, not just multi and single
 /// Remove #[derive(Debug)] from structs
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     // TODO make these command line args
 
     let game_meta = get_game_meta();
 
-    let mut game_db: HashMap<Tiles, Float> = HashMap::new();
-    r_solve(game_meta.tiles.clone(), &game_meta, &mut game_db);
+    let game_db = split_solve(game_meta.tiles.clone(), &game_meta).await;
 
     let trunk = Trunk { game_meta, game_db };
     println!(
         "Win chance: {:.2}%",
         trunk.game_db.get(&trunk.game_meta.tiles).unwrap() * 100.0
     );
+    Ok(())
 }
 
 #[async_recursion]
 async fn split_solve(tiles: Tiles, game_meta: &GameMeta) -> HashMap<Tiles, Float> {
-    if tiles.len() < 3 {
+    if tiles.len() < 5 {
         let mut res = HashMap::new();
         r_solve(tiles, &game_meta, &mut res);
         return res;
