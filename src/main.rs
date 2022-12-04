@@ -1,11 +1,8 @@
 use async_recursion::async_recursion;
-// use async_std::task::JoinHandle;
+use rayon::prelude::*;
 use rustop::opts;
-// use tokio::task;
-// use tokio::runtime::Builder;
-// use tokio::runtime::Runtime;
 use std::collections::HashMap;
-use std::{thread, io};
+use std::io;
 
 type Uns = u16; // any unsigned int should work, primary use of memory
 type Float = f64;
@@ -18,7 +15,7 @@ struct Trunk {
     game_db: HashMap<Tiles, Float>, // contains all possible child game states
 }
 
-#[derive(Debug ,Clone)]
+#[derive(Debug, Clone)]
 struct GameMeta {
     die_max: Uns, // maximum die value
     tiles: Tiles,
@@ -47,7 +44,16 @@ struct InitData {
 async fn main() -> io::Result<()> {
     // TODO make these command line args
 
+    let start = std::time::Instant::now();
+    println!("Time elapsed: {:?}", start.elapsed());
     let game_meta = get_game_meta();
+    println!("Done with setup, solving game states...");
+    // get system time
+    println!("Time elapsed: {:?}", start.elapsed());
+    let x = get_tile_combos(&game_meta.tiles);
+    println!("game states: {:?}", x);
+    // print time elapsed
+    println!("Time elapsed: {:?}", start.elapsed());
 
     let game_db = split_solve(game_meta.tiles.clone(), game_meta.clone()).await;
     let trunk = Trunk { game_meta, game_db };
@@ -56,10 +62,46 @@ async fn main() -> io::Result<()> {
         trunk.game_db.get(&trunk.game_meta.tiles).unwrap() * 100.0
     );
     println!("num of game entries: {}", trunk.game_db.len());
-    let w = trunk.game_meta.trphm.clone().into_values().flatten().collect::<Vec<_>>().len();
+    let w = trunk
+        .game_meta
+        .trphm
+        .clone()
+        .into_values()
+        .flatten()
+        .collect::<Vec<_>>()
+        .len();
     println!("trp count: {:?}", w);
     // println!("{:?}", &trunk.game_meta.trphm);
+    println!("Time elapsed: {:?}", start.elapsed());
     Ok(())
+}
+
+fn get_tile_combos(tiles: &Tiles) -> Vec<Vec<Tiles>> {
+    let mut game_states = Vec::new();
+    for i in 1..tiles.len() {
+        game_states.push(get_game_states_by_tiles_remaining(tiles, &Vec::new(), i));
+    }
+    game_states
+}
+
+// get all possible game states with a given tile set and a number of tiles
+fn get_game_states_by_tiles_remaining(remaining_tiles: &Tiles, curr_tiles: &Tiles, num_tiles: usize) -> Vec<Tiles> {
+    // TODO async?
+    if num_tiles == curr_tiles.len() {
+        return vec![curr_tiles.clone()];
+    }
+    let mut sol = Vec::new();
+    for i in 0..remaining_tiles.len() {
+        if curr_tiles.len() > 0 && remaining_tiles[i] < curr_tiles[curr_tiles.len() - 1] {
+            continue;
+        }
+        let mut curr_tiles = curr_tiles.clone();
+        let mut remaining_tiles = remaining_tiles.clone();
+        curr_tiles.push(remaining_tiles.remove(i));
+        let sols = get_game_states_by_tiles_remaining(&remaining_tiles, &curr_tiles, num_tiles);
+        sol.extend(sols);
+    }
+    sol
 }
 
 #[async_recursion]
@@ -70,26 +112,50 @@ async fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float>
         r_solve(tiles, &game_meta, &mut res);
         return res;
     }
-    let worker_count = 2;
-    let chunks = tiles.chunks((tiles.len() / worker_count).max(1));
-    let mut handles = Vec::new();
-    for chunk in chunks {
-        let curr_tiles = chunk.to_vec();
-        let curr_game_meta = game_meta.clone();
-        let handle = thread::spawn(move || {
-            split_solve(curr_tiles, curr_game_meta)
-        });
-        handles.push(handle);
-    }
+    let mut result = HashMap::new();
 
-    let mut result: HashMap<Tiles, Float> = HashMap::new();
-    
-    for handle in handles {
-        let curr_result = handle.join().unwrap().await;
-        result.extend(curr_result);
+    let t_combos = get_tile_combos(&tiles);
+
+    for chunk_size in 2..tiles.len() + 1 {
+        let tiles = tiles.clone();
+        let chunks = tiles.chunks(chunk_size.max(1));
+        let vec = chunks.collect::<Vec<_>>();
+        let par_iter = vec
+            .par_iter()
+            // .filter_map(|value| value.as_ref().ok())
+            .map(|chunk| {
+                let mut res = result.clone();
+                r_solve(chunk.to_vec(), &game_meta, &mut res);
+                res
+            })
+            .reduce(
+                || HashMap::new(),
+                |m1, m2| {
+                    let mut res = m1;
+                    res.extend(m2);
+                    res
+                },
+            );
+        result.extend(par_iter);
     }
-    r_solve(tiles, &game_meta, &mut result);
-    println!("result for {} tiles\n", (result.len() as f64).log2());
+    // let mut handles = Vec::new();
+    // for chunk in chunks {
+    //     let curr_tiles = chunk.to_vec();
+    //     let curr_game_meta = game_meta.clone();
+    //     let handle = thread::spawn(move || {
+    //         split_solve(curr_tiles, curr_game_meta)
+    //     });
+    //     handles.push(handle);
+    // }
+
+    // let mut result: HashMap<Tiles, Float> = HashMap::new();
+
+    // for handle in handles {
+    //     let curr_result = handle.join().unwrap().await;
+    //     result.extend(curr_result);
+    // }
+    // r_solve(tiles, &game_meta, &mut result);
+    // println!("result for {} tiles\n", (result.len() as f64).log2());
     result
 }
 
