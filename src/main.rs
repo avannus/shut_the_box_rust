@@ -1,8 +1,6 @@
-use async_recursion::async_recursion;
 use rayon::prelude::*;
 use rustop::opts;
 use std::collections::HashMap;
-use std::io;
 
 type Uns = u16; // any unsigned int should work, primary use of memory
 type Float = f64;
@@ -40,40 +38,20 @@ struct InitData {
 /// General Improvements
 ///     Allow to roll any number of dice, not just multi and single
 /// Remove #[derive(Debug)] from structs
-#[tokio::main]
-async fn main() -> io::Result<()> {
+fn main(){
     // TODO make these command line args
 
-    let start = std::time::Instant::now();
-    println!("Time elapsed: {:?}", start.elapsed());
     let game_meta = get_game_meta();
     println!("Done with setup, solving game states...");
-    // get system time
-    println!("Time elapsed: {:?}", start.elapsed());
-    let x = get_tile_combos(&game_meta.tiles);
-    println!("game states: {:?}", x);
-    // print time elapsed
-    println!("Time elapsed: {:?}", start.elapsed());
 
-    let game_db = split_solve(game_meta.tiles.clone(), game_meta.clone()).await;
+    let game_db = split_solve(game_meta.tiles.clone(), game_meta.clone());
     let trunk = Trunk { game_meta, game_db };
     println!(
         "Win chance: {:.2}%",
         trunk.game_db.get(&trunk.game_meta.tiles).unwrap() * 100.0
     );
     println!("num of game entries: {}", trunk.game_db.len());
-    let w = trunk
-        .game_meta
-        .trphm
-        .clone()
-        .into_values()
-        .flatten()
-        .collect::<Vec<_>>()
-        .len();
-    println!("trp count: {:?}", w);
     // println!("{:?}", &trunk.game_meta.trphm);
-    println!("Time elapsed: {:?}", start.elapsed());
-    Ok(())
 }
 
 fn get_tile_combos(tiles: &Tiles) -> Vec<Vec<Tiles>> {
@@ -104,22 +82,22 @@ fn get_game_states_by_tiles_remaining(remaining_tiles: &Tiles, curr_tiles: &Tile
     sol
 }
 
-#[async_recursion]
-async fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
-    if tiles.len() <= 2 {
-        println!("Raw solve for {} tiles", &tiles.len());
-        let mut res = HashMap::new();
-        r_solve(tiles, &game_meta, &mut res);
-        return res;
-    }
+fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
     let mut result = HashMap::new();
 
+    print!("about to get tile combos... ");
     let t_combos = get_tile_combos(&tiles);
+    println!("DONE");
 
-    for chunk_size in 2..tiles.len() + 1 {
-        let tiles = tiles.clone();
-        let chunks = tiles.chunks(chunk_size.max(1));
-        let vec = chunks.collect::<Vec<_>>();
+    for t_combo in t_combos {
+        // let tiles = tiles.clone();
+        // let chunks = tiles.chunks(chunk_size.max(1));
+        // let vec = chunks.collect::<Vec<_>>();
+        let vec: Vec<Tiles> = t_combo;
+        result = result.clone();
+        // if vec.len() == 45 {
+        //     println!("Curr res for combos {:?} :\n{:?}", vec, result);
+        // }
         let par_iter = vec
             .par_iter()
             // .filter_map(|value| value.as_ref().ok())
@@ -136,26 +114,10 @@ async fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float>
                     res
                 },
             );
+        println!("par_iter len: {:?}", par_iter.len());
         result.extend(par_iter);
     }
-    // let mut handles = Vec::new();
-    // for chunk in chunks {
-    //     let curr_tiles = chunk.to_vec();
-    //     let curr_game_meta = game_meta.clone();
-    //     let handle = thread::spawn(move || {
-    //         split_solve(curr_tiles, curr_game_meta)
-    //     });
-    //     handles.push(handle);
-    // }
-
-    // let mut result: HashMap<Tiles, Float> = HashMap::new();
-
-    // for handle in handles {
-    //     let curr_result = handle.join().unwrap().await;
-    //     result.extend(curr_result);
-    // }
-    // r_solve(tiles, &game_meta, &mut result);
-    // println!("result for {} tiles\n", (result.len() as f64).log2());
+    r_solve(tiles, &game_meta, &mut result);
     result
 }
 
