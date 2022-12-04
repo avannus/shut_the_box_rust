@@ -2,6 +2,8 @@ use mini_redis::{Result};
 use async_recursion::async_recursion;
 use rustop::opts;
 use std::collections::HashMap;
+use async_std::task;
+use std::thread;
 
 type Uns = u16; // any unsigned int should work, primary use of memory
 type Float = f64;
@@ -14,7 +16,7 @@ struct Trunk {
     game_db: HashMap<Tiles, Float>, // contains all possible child game states
 }
 
-#[derive(Debug)]
+#[derive(Debug ,Clone)]
 struct GameMeta {
     die_max: Uns, // maximum die value
     tiles: Tiles,
@@ -45,7 +47,7 @@ async fn main() -> Result<()> {
 
     let game_meta = get_game_meta();
 
-    let game_db = split_solve(game_meta.tiles.clone(), &game_meta).await;
+    let game_db = split_solve(game_meta.tiles.clone(), game_meta.clone()).await;
 
     let trunk = Trunk { game_meta, game_db };
     println!(
@@ -56,19 +58,25 @@ async fn main() -> Result<()> {
 }
 
 #[async_recursion]
-async fn split_solve(tiles: Tiles, game_meta: &GameMeta) -> HashMap<Tiles, Float> {
-    if tiles.len() < 5 {
+async fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
+    if tiles.len() < 3 {
         let mut res = HashMap::new();
         r_solve(tiles, &game_meta, &mut res);
         return res;
     }
     let left = tiles[0..tiles.len() / 2].to_vec();
     let right = tiles[tiles.len() / 2..tiles.len()].to_vec();
-    let left_res = split_solve(left, game_meta);
-    let right_res = split_solve(right, game_meta);
+    let left_meta = game_meta.clone();
+    let right_meta = game_meta.clone();
+    let left_future = split_solve(left, left_meta);
+    let right_future = split_solve(right, right_meta);
+    let left_task = task::spawn(left_future);
+    let right_task = task::spawn(right_future);
+    let left_res = left_task.await;
+    let right_res = right_task.await;
     // join left and right
-    let mut combined = left_res.await;
-    combined.extend(right_res.await);
+    let mut combined = left_res;
+    combined.extend(right_res);
     r_solve(tiles, &game_meta, &mut combined);
     combined
 }
