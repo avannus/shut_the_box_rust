@@ -1,9 +1,9 @@
 use async_recursion::async_recursion;
-use async_std::task::JoinHandle;
+// use async_std::task::JoinHandle;
 use rustop::opts;
-use tokio::task;
-use tokio::runtime::Builder;
-use tokio::runtime::Runtime;
+// use tokio::task;
+// use tokio::runtime::Builder;
+// use tokio::runtime::Runtime;
 use std::collections::HashMap;
 use std::{thread, io};
 
@@ -60,7 +60,7 @@ async fn main() -> io::Result<()> {
 
 #[async_recursion]
 async fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
-    if tiles.len() < 4 {
+    if tiles.len() < 2 {
         let mut res = HashMap::new();
         r_solve(tiles, &game_meta, &mut res);
         return res;
