@@ -1,5 +1,4 @@
-extern crate rustop;
-
+use async_recursion::async_recursion;
 use rustop::opts;
 use std::collections::HashMap;
 
@@ -17,7 +16,7 @@ struct Trunk {
 #[derive(Debug)]
 struct GameMeta {
     die_max: Uns, // maximum die value
-    start_tiles: Tiles,
+    tiles: Tiles,
 
     trphm: HashMap<Uns, Vec<Tiles>>, // tile removal possibilities hash map
     roll_probs_single: HashMap<Uns, Float>, // probabilities of key if a single die is rolled
@@ -45,22 +44,38 @@ fn main() {
     let game_meta = get_game_meta();
 
     let mut game_db: HashMap<Tiles, Float> = HashMap::new();
-    // println!("initialized game, starting trunk calculation");
-    // fill out game_db
-    r_solve(game_meta.start_tiles.clone(), &game_meta, &mut game_db);
+    r_solve(game_meta.tiles.clone(), &game_meta, &mut game_db);
+
     let trunk = Trunk { game_meta, game_db };
-    // println!("{}", get_readable_trunk_string(&trunk));
     println!(
-        "{}",
-        trunk.game_db.get(&trunk.game_meta.start_tiles).unwrap()
+        "Win chance: {:.2}%",
+        trunk.game_db.get(&trunk.game_meta.tiles).unwrap() * 100.0
     );
+}
+
+#[async_recursion]
+async fn split_solve(tiles: Tiles, game_meta: &GameMeta) -> HashMap<Tiles, Float> {
+    if tiles.len() < 3 {
+        let mut res = HashMap::new();
+        r_solve(tiles, &game_meta, &mut res);
+        return res;
+    }
+    let left = tiles[0..tiles.len() / 2].to_vec();
+    let right = tiles[tiles.len() / 2..tiles.len()].to_vec();
+    let left_res = split_solve(left, game_meta);
+    let right_res = split_solve(right, game_meta);
+    // join left and right
+    let mut combined = left_res.await;
+    combined.extend(right_res.await);
+    r_solve(tiles, &game_meta, &mut combined);
+    combined
 }
 
 #[allow(dead_code)]
 fn get_readable_game_meta(game_meta: &GameMeta) -> String {
     let mut out = String::new();
     out.push_str(&format!("    die_max: {}\n", game_meta.die_max));
-    out.push_str(&format!("    start_tiles: {:?}\n", game_meta.start_tiles));
+    out.push_str(&format!("    start_tiles: {:?}\n", game_meta.tiles));
     out.push_str(&format!("    trphm: {:?}\n", game_meta.trphm));
     out.push_str(&format!(
         "    roll_probs_single: {:?}\n",
@@ -81,7 +96,7 @@ fn get_readable_trunk_string(trunk: &Trunk) -> String {
     s.push_str("\nWIN CHANCE:\n");
     s.push_str(&format!(
         "  {:?}",
-        trunk.game_db.get(&trunk.game_meta.start_tiles).unwrap()
+        trunk.game_db.get(&trunk.game_meta.tiles).unwrap()
     ));
     s.push_str("\n");
     s
@@ -393,6 +408,6 @@ fn get_game_meta() -> GameMeta {
         trphm,
         roll_probs_single,
         roll_probs_multi,
-        start_tiles: init_data.start_tiles,
+        tiles: init_data.start_tiles,
     }
 }
