@@ -50,17 +50,26 @@ fn main() {
     r_solve(game_meta.start_tiles.clone(), &game_meta, &mut game_db);
     let trunk = Trunk { game_meta, game_db };
     // println!("{}", get_readable_trunk_string(&trunk));
-    println!("{}", trunk.game_db.get(&trunk.game_meta.start_tiles).unwrap());
+    println!(
+        "{}",
+        trunk.game_db.get(&trunk.game_meta.start_tiles).unwrap()
+    );
 }
 
 #[allow(dead_code)]
-fn get_readable_game_meta (game_meta: &GameMeta) -> String {
+fn get_readable_game_meta(game_meta: &GameMeta) -> String {
     let mut out = String::new();
     out.push_str(&format!("    die_max: {}\n", game_meta.die_max));
     out.push_str(&format!("    start_tiles: {:?}\n", game_meta.start_tiles));
     out.push_str(&format!("    trphm: {:?}\n", game_meta.trphm));
-    out.push_str(&format!("    roll_probs_single: {:?}\n", game_meta.roll_probs_single));
-    out.push_str(&format!("    roll_probs_multi: {:?}\n", game_meta.roll_probs_multi));
+    out.push_str(&format!(
+        "    roll_probs_single: {:?}\n",
+        game_meta.roll_probs_single
+    ));
+    out.push_str(&format!(
+        "    roll_probs_multi: {:?}\n",
+        game_meta.roll_probs_multi
+    ));
     out
 }
 
@@ -266,7 +275,7 @@ fn get_tile_removal_possibilities(
     let mut trp: HashMap<Uns, Vec<Tiles>> = HashMap::new();
     for roll in possible_rolls {
         if roll > &0 {
-        let removals: Vec<Tiles> = r_tile_removal(tiles, roll, &removal_max);
+            let removals: Vec<Tiles> = r_tile_removal(tiles, roll, &removal_max);
             trp.insert(*roll, removals);
         } else {
             trp.insert(*roll, vec![vec![0]]);
