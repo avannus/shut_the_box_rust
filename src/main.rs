@@ -18,10 +18,7 @@ struct Trunk {
 
 #[derive(Debug)]
 struct GameMeta {
-    die_vals: Tiles, // all possible die values
-    die_max: Uns,    // maximum die value
-    die_cnt: Uns,    // number of dice
-    max_remove: Uns, // max number of tiles to remove, 0 for unlimited
+    die_max: Uns, // maximum die value
 
     trphm: HashMap<Uns, Vec<Tiles>>, // tile removal possibilities hash map
     roll_probs_single: HashMap<Uns, Float>, // probabilities of key if a single die is rolled
@@ -30,16 +27,7 @@ struct GameMeta {
 
 #[derive(Debug, Clone, Copy)]
 struct GameStats {
-    win_chance: Float,        // chance of winning
-    win_chance_single: Float, // chance of winning with a single die
-    win_chance_multi: Float,  // chance of winning with all dice
-}
-
-struct GameStatsHashMap {
-    next_states: HashMap<Uns, Vec<Tiles>>, // all possible next states, keyed by roll
-    child_count: usize,                    // number of children
-    optimal_next_states_single: HashMap<Uns, Tiles>, // optimal next states with one die
-    optimal_next_states_multi: HashMap<Uns, Tiles>, // optimal next states with two dice
+    win_chance: Float, // chance of winning
 }
 
 /// TODOS
@@ -68,18 +56,15 @@ fn main() {
     let roll_possib = get_srt_dedup_keys(&roll_probs_multi, &roll_probs_single);
 
     let trphm = get_tile_removal_possibilities(&start_tiles, &roll_possib, &max_remove);
-    println!("roll_counts: {:?}", all_multi_rolls);
-    println!("possible_rolls: {:?}", roll_possib);
-    println!("roll_probabilities: {:?}", roll_probs_multi);
-    println!("roll_probabilities_single: {:?}", roll_probs_single);
-    println!("trphm: {:?}", trphm);
+    // println!("roll_counts: {:?}", all_multi_rolls);
+    // println!("possible_rolls: {:?}", roll_possib);
+    // println!("roll_probabilities: {:?}", roll_probs_multi);
+    // println!("roll_probabilities_single: {:?}", roll_probs_single);
+    // println!("trphm: {:?}", trphm);
 
     let mut game_db: HashMap<Tiles, GameStats> = HashMap::new();
     let game_meta = GameMeta {
-        die_vals,
         die_max,
-        die_cnt,
-        max_remove,
         trphm,
         roll_probs_single,
         roll_probs_multi,
@@ -91,7 +76,22 @@ fn main() {
         start_tiles,
         game_db,
     };
-    println!("trunk: {:?}", trunk);
+    println!("\n\nGame Data:\n{}", get_readable_string(&trunk));
+}
+
+fn get_readable_string(trunk: &Trunk) -> String {
+    let mut s = String::new();
+    s.push_str("game_meta:\n ");
+    s.push_str(&format!("{:?}", trunk.game_meta));
+    s.push_str("\nstart_tiles:\n ");
+    s.push_str(&format!("{:?}", trunk.start_tiles));
+    s.push_str("\ngame_db entry for start tiles:\n ");
+    s.push_str(&format!(
+        "{:?}",
+        trunk.game_db.get(&trunk.start_tiles).unwrap()
+    ));
+    s.push_str("\n");
+    s
 }
 
 fn r_solve(
@@ -107,11 +107,7 @@ fn r_solve(
         }
         None => {
             if tiles.len() == 0 {
-                let x = GameStats {
-                    win_chance: 1.0,
-                    win_chance_single: 1.0,
-                    win_chance_multi: 1.0,
-                };
+                let x = GameStats { win_chance: 1.0 };
                 game_db.insert(tiles, x.clone());
                 return x;
             }
@@ -145,17 +141,13 @@ fn r_solve(
             let mut best_states_multi_hm = HashMap::new();
             let mut win_chance_single = 0.;
             let mut win_chance_multi = 0.;
-            let mut child_count = 0;
             for (roll, state_stat) in solved_next_legal_states_hm {
                 let mut curr_best_chance = 0.;
                 let mut curr_best_state: Tiles = vec![];
                 let mut curr_best_stats = GameStats {
                     // TODO remove lol
                     win_chance: 0.,
-                    win_chance_single: 0.,
-                    win_chance_multi: 0.,
                 };
-                child_count += state_stat.len();
                 for (state, stat) in state_stat {
                     if stat.win_chance > curr_best_chance {
                         curr_best_chance = stat.win_chance;
@@ -184,8 +176,6 @@ fn r_solve(
             }
             let game_stats = GameStats {
                 win_chance: win_chance_single.max(win_chance_multi),
-                win_chance_single,
-                win_chance_multi,
             };
             game_db.insert(tiles, game_stats);
             game_stats
@@ -193,7 +183,7 @@ fn r_solve(
     }
 }
 
-fn get_next_legal_states_roll(tiles: &Tiles, trps: &Vec<Tiles>, roll: Uns) -> Vec<Tiles> {
+fn get_next_legal_states_roll(tiles: &Tiles, trps: &Vec<Tiles>) -> Vec<Tiles> {
     let mut legal_states = Vec::new();
     for trp in trps {
         let new_tiles = get_removed_tiles(tiles, trp);
@@ -216,7 +206,7 @@ fn get_next_legal_states_all(
         return hm;
     }
     for (roll, trps) in trphm {
-        let legal_states = get_next_legal_states_roll(tiles, trps, *roll);
+        let legal_states = get_next_legal_states_roll(tiles, trps);
         if legal_states.len() > 0 {
             hm.insert(*roll, legal_states);
         }
@@ -286,7 +276,7 @@ fn get_roll_counts(values: &Vec<Uns>, count: Uns, sum: Uns) -> Vec<Uns> {
 }
 
 /**
- * returns an unmuted sorted vector
+ * returns an sorted vector
  */
 fn get_srt<T: Copy + Ord>(a: &[T]) -> Vec<T> {
     let mut b = a.to_vec();
