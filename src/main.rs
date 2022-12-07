@@ -72,10 +72,13 @@ struct InitData {
 fn main() {
     // TODO make these command line args
 
+    let start = std::time::Instant::now();
+
     let game_meta = get_game_meta();
     println!("Done with setup, solving game states...");
+    println!("Game initialized in {:.3}s", start.elapsed().as_secs_f64());
 
-    let start = std::time::Instant::now();
+
     let algorithm = if game_meta.algorithm == Algorithm::Default {
         Algorithm::Parallel
     } else {
@@ -86,7 +89,7 @@ fn main() {
         println!("Solving with naive algorithm...");
         let start = std::time::Instant::now();
         let (naive_prob, game_count) = naive_solve(game_meta.tiles.clone(), &game_meta);
-        println!("num of game entries: {}", game_count); // TODO
+        println!("num of game entries: {}", game_count);
         println!("Win chance: {:.2}%", naive_prob * 100.0);
         let duration = start.elapsed().as_secs_f64();
         println!("Time elapsed in naive_solve() is: {:.3}s\n", duration);
