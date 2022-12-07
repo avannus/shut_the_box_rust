@@ -86,8 +86,8 @@ fn main() {
         println!("Solving with naive algorithm...");
         let start = std::time::Instant::now();
         let naive_prob = naive_solve(game_meta.tiles.clone(), &game_meta);
-        println!("Win chance: {:.2}%", naive_prob * 100.0);
         // println!("num of game entries: {}", naive_prob.len()); // TODO
+        println!("Win chance: {:.2}%", naive_prob * 100.0);
         let duration = start.elapsed().as_secs_f64();
         println!("Time elapsed in naive_solve() is: {:.3}s\n", duration);
     }
@@ -96,11 +96,11 @@ fn main() {
         let start = std::time::Instant::now();
         let mut depth_db = HashMap::new();
         depth_solve(game_meta.tiles.clone(), &game_meta, &mut depth_db);
+        println!("num of game entries: {}", depth_db.len());
         println!(
             "Win chance: {:.2}%",
             depth_db.get(&game_meta.tiles).unwrap() * 100.0
         );
-        println!("num of game entries: {}", depth_db.len());
         let duration = start.elapsed().as_secs_f64();
         println!("Time elapsed in depth_solve() is: {:.3}s\n", duration);
     }
@@ -108,11 +108,11 @@ fn main() {
         println!("Solving with parallel algorithm...");
         let start = std::time::Instant::now();
         let par_db = par_solve(game_meta.tiles.clone(), game_meta.clone());
+        println!("num of game entries: {}", par_db.len());
         println!(
             "Win chance: {:.2}%",
             par_db.get(&game_meta.tiles).unwrap() * 100.0
         );
-        println!("num of game entries: {}", par_db.len());
         let duration = start.elapsed().as_secs_f64();
         println!("Time elapsed in par_solve() is: {:.3}s\n", duration);
     }
