@@ -17,6 +17,16 @@ struct Trunk {
     game_db: HashMap<Tiles, Float>, // contains all possible child game states
 }
 
+// TODO allow multiple algos?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Algorithm {
+    All,
+    Naive,
+    Depth,
+    Parallel,
+    Default,
+}
+
 /// Minimal necessary data to calculate a given game. Shared between all game states of a game.
 #[derive(Debug, Clone)]
 struct GameMeta {
@@ -32,6 +42,9 @@ struct GameMeta {
     roll_probs_single: HashMap<Uns, Float>,
     /// Perfect play win chance if multiple dice are rolled (always legal)
     roll_probs_multi: HashMap<Uns, Float>,
+
+    /// The algorithm to use for solving
+    algorithm: Algorithm,
 }
 
 /// Data extracted from program args (or lack thereof)
@@ -44,6 +57,8 @@ struct InitData {
     start_tiles: Tiles,
     /// The maximum number of tiles to remove on a given turn
     max_remove: Uns,
+    /// Run all algos
+    algorithm: Algorithm,
 }
 
 /// Solves a given game.
@@ -59,14 +74,46 @@ fn main(){
 
     let game_meta = get_game_meta();
     println!("Done with setup, solving game states...");
+    
+    // time this function
+    let start = std::time::Instant::now();
+    let algorithm = if game_meta.algorithm == Algorithm::Default {
+        Algorithm::Parallel
+    } else {
+        game_meta.algorithm
+    };
 
-    let game_db = split_solve(game_meta.tiles.clone(), game_meta.clone());
-    let trunk = Trunk { game_meta, game_db };
-    println!(
-        "Win chance: {:.2}%",
-        trunk.game_db.get(&trunk.game_meta.tiles).unwrap() * 100.0
-    );
-    println!("num of game entries: {}", trunk.game_db.len());
+    if algorithm == Algorithm::All || algorithm == Algorithm::Naive {
+        println!("Solving with naive algorithm...");
+        let start = std::time::Instant::now();
+        let naive_prob = naive_solve(game_meta.tiles.clone(), &game_meta);
+        println!("Win chance: {:.2}%", naive_prob * 100.0);
+        // println!("num of game entries: {}", naive_prob.len());
+        let duration = start.elapsed().as_secs_f64();
+        println!("Time elapsed in naive_solve() is: {:.3}s\n", duration);
+    }
+    if algorithm == Algorithm::All || algorithm == Algorithm::Depth {
+        println!("Solving with depth algorithm...");
+        let start = std::time::Instant::now();
+        let mut depth_db = HashMap::new();
+        depth_solve(game_meta.tiles.clone(), &game_meta, &mut depth_db);
+        println!("Win chance: {:.2}%", depth_db.get(&game_meta.tiles).unwrap() * 100.0);
+        println!("num of game entries: {}", depth_db.len());
+        let duration = start.elapsed().as_secs_f64();
+        println!("Time elapsed in depth_solve() is: {:.3}s\n", duration);
+    }
+    if algorithm == Algorithm::All || algorithm == Algorithm::Parallel {
+        println!("Solving with parallel algorithm...");
+        let start = std::time::Instant::now();
+        let par_db = par_solve(game_meta.tiles.clone(), game_meta.clone());
+        println!("Win chance: {:.2}%", par_db.get(&game_meta.tiles).unwrap() * 100.0);
+        println!("num of game entries: {}", par_db.len());
+        let duration = start.elapsed().as_secs_f64();
+        println!("Time elapsed in par_solve() is: {:.3}s\n", duration);
+    }
+    
+    let duration = start.elapsed().as_secs_f64();
+    println!("Total time elapsed is: {:.3}s\n", duration);
     // println!("{:?}", &trunk.game_meta.trphm);
 }
 
@@ -101,7 +148,7 @@ fn get_game_states_by_tiles_remaining(remaining_tiles: &Tiles, curr_tiles: &Tile
 }
 
 /// Solves a given game in parallel
-fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
+fn par_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
     let mut result = HashMap::new();
 
     print!("about to get tile combos... ");
@@ -122,7 +169,7 @@ fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
             // .filter_map(|value| value.as_ref().ok())
             .map(|chunk| {
                 let mut res = result.clone();
-                r_solve(chunk.to_vec(), &game_meta, &mut res);
+                depth_solve(chunk.to_vec(), &game_meta, &mut res);
                 res
             })
             .reduce(
@@ -136,7 +183,7 @@ fn split_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
         println!("par_iter len: {:?}", par_iter.len());
         result.extend(par_iter);
     }
-    r_solve(tiles, &game_meta, &mut result);
+    depth_solve(tiles, &game_meta, &mut result);
     result
 }
 
@@ -173,8 +220,75 @@ fn get_readable_trunk_string(trunk: &Trunk) -> String {
     s
 }
 
+/// Recursively and naively solves a given game through a breadth-first traversal
+fn naive_solve(tiles: Tiles, game_meta: &GameMeta) -> Float {
+    let win_single = naive_solve_single(tiles.clone(), game_meta);
+    let win_multi = naive_solve_multi(tiles.clone(), game_meta);
+    win_single.max(win_multi)
+}
+
+fn naive_solve_single(tiles: Tiles, game_meta: &GameMeta) -> Float {
+    if tiles.len() == 0 {
+        return 1.;
+    }
+    let mut prob = 0.;
+    let roll_probs = &game_meta.roll_probs_single;
+    let trphm = &game_meta.trphm;
+    for (roll, roll_prob) in roll_probs {
+        let trps = trphm.get(roll).unwrap();
+        let mut rolls = Vec::new();
+        for trp in trps {
+            let new_tiles = get_removed_tiles(&tiles, trp);
+            match new_tiles {
+                Some(new_tiles) => {
+                    let curr_prob = roll_prob;
+                    rolls.push(curr_prob * naive_solve(
+                        new_tiles,
+                        game_meta,
+                    ));
+                }
+                None => {}
+            }
+        }
+        if rolls.len() > 0 {
+            prob += rolls.iter().cloned().fold(0. / 0., f64::max);
+        }
+    }
+    prob
+}
+
+fn naive_solve_multi(tiles: Tiles, game_meta: &GameMeta) -> Float {
+    if tiles.len() == 0 {
+        return 1.;
+    }
+    let mut prob = 0.;
+    let roll_probs = &game_meta.roll_probs_multi;
+    let trphm = &game_meta.trphm;
+    for (roll, roll_prob) in roll_probs {
+        let trps = trphm.get(roll).unwrap();
+        let mut rolls = Vec::new();
+        for trp in trps {
+            let new_tiles = get_removed_tiles(&tiles, trp);
+            match new_tiles {
+                Some(new_tiles) => {
+                    let curr_prob = roll_prob;
+                    rolls.push(curr_prob * naive_solve(
+                        new_tiles,
+                        game_meta,
+                    ));
+                }
+                None => {}
+            }
+        }
+        if rolls.len() > 0 {
+            prob += rolls.iter().cloned().fold(0. / 0., f64::max);
+        }
+    }
+    prob
+}
+
 /// Recursively solves a given game through a depth-first traversal
-fn r_solve(tiles: Tiles, game_meta: &GameMeta, game_db: &mut HashMap<Tiles, Float>) -> Float {
+fn depth_solve(tiles: Tiles, game_meta: &GameMeta, game_db: &mut HashMap<Tiles, Float>) -> Float {
     let tiles = tiles.clone();
     let existing_game = game_db.get(&tiles);
     match existing_game {
@@ -272,7 +386,7 @@ fn get_all_stats_from_states(
     let mut res = Vec::new();
     for state in states {
         let state = state.clone();
-        let stats = r_solve(state.clone(), game_meta, game_db);
+        let stats = depth_solve(state.clone(), game_meta, game_db);
         res.push((state, stats));
     }
     res
@@ -423,6 +537,10 @@ fn parse_args() -> InitData {
         opt t_max: Uns=9, desc: "Maximum tile value, increments by 1";
         opt t_direct: Vec<Uns>, desc: "Starting tiles, ignores min_tile and max_tile", multi:true;
         opt max_remove: Uns=0, desc: "Maximum number of tiles to remove per turn, 0 for no limit";
+        opt all: bool=false, desc: "Run using all possible algorithms";
+        opt naive: bool=false, desc: "Run using naive algorithm";
+        opt depth: bool=false, desc: "Run using depth first search singly-threaded algorithm";
+        opt parallel: bool=false, desc: "Run using parallel algorithm";
     }
     .parse_or_exit();
 
@@ -431,11 +549,25 @@ fn parse_args() -> InitData {
 
     let start_tiles = get_start_tiles(args.t_min, args.t_max, args.t_direct);
     let max_remove = args.max_remove;
+
+    let algorithm = if args.all {
+        Algorithm::All
+    } else if args.naive {
+        Algorithm::Naive
+    } else if args.depth {
+        Algorithm::Depth
+    } else if args.parallel {
+        Algorithm::Parallel
+    } else {
+        Algorithm::Default
+    };
+
     InitData {
         die_vals,
         die_cnt,
         start_tiles,
         max_remove,
+        algorithm,
     }
 }
 
@@ -498,5 +630,6 @@ fn get_game_meta() -> GameMeta {
         roll_probs_single,
         roll_probs_multi,
         tiles: init_data.start_tiles,
+        algorithm: init_data.algorithm,
     }
 }
