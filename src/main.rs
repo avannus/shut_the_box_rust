@@ -85,8 +85,8 @@ fn main() {
     if algorithm == Algorithm::All || algorithm == Algorithm::Naive {
         println!("Solving with naive algorithm...");
         let start = std::time::Instant::now();
-        let naive_prob = naive_solve(game_meta.tiles.clone(), &game_meta);
-        // println!("num of game entries: {}", naive_prob.len()); // TODO
+        let (naive_prob, game_count) = naive_solve(game_meta.tiles.clone(), &game_meta);
+        println!("num of game entries: {}", game_count); // TODO
         println!("Win chance: {:.2}%", naive_prob * 100.0);
         let duration = start.elapsed().as_secs_f64();
         println!("Time elapsed in naive_solve() is: {:.3}s\n", duration);
@@ -223,19 +223,20 @@ fn get_readable_trunk_string(trunk: &Trunk) -> String {
 }
 
 /// Recursively and naively solves a given game through a breadth-first traversal
-fn naive_solve(tiles: Tiles, game_meta: &GameMeta) -> Float {
-    let win_single = naive_solve_single(tiles.clone(), game_meta);
-    let win_multi = naive_solve_multi(tiles.clone(), game_meta);
-    win_single.max(win_multi)
+fn naive_solve(tiles: Tiles, game_meta: &GameMeta) -> (Float, u64) {
+    let (win_single, game_calc_cnt_single) = naive_solve_single(tiles.clone(), game_meta);
+    let (win_multi, game_calc_cnt_multi) = naive_solve_multi(tiles.clone(), game_meta);
+    (win_single.max(win_multi), game_calc_cnt_single + game_calc_cnt_multi)
 }
 
-fn naive_solve_single(tiles: Tiles, game_meta: &GameMeta) -> Float {
+fn naive_solve_single(tiles: Tiles, game_meta: &GameMeta) -> (Float, u64) {
     if tiles.len() == 0 {
-        return 1.;
+        return (1., 0);
     }
     let mut prob = 0.;
     let roll_probs = &game_meta.roll_probs_single;
     let trphm = &game_meta.trphm;
+    let mut game_count = 1;
     for (roll, roll_prob) in roll_probs {
         let trps = trphm.get(roll).unwrap();
         let mut rolls = Vec::new();
@@ -244,7 +245,9 @@ fn naive_solve_single(tiles: Tiles, game_meta: &GameMeta) -> Float {
             match new_tiles {
                 Some(new_tiles) => {
                     let curr_prob = roll_prob;
-                    rolls.push(curr_prob * naive_solve(new_tiles, game_meta));
+                    let (win_chance, new_game_count) = naive_solve(new_tiles, game_meta);
+                    game_count += new_game_count;
+                    rolls.push(curr_prob * win_chance);
                 }
                 None => {}
             }
@@ -253,16 +256,17 @@ fn naive_solve_single(tiles: Tiles, game_meta: &GameMeta) -> Float {
             prob += rolls.iter().cloned().fold(0. / 0., f64::max);
         }
     }
-    prob
+    (prob, game_count)
 }
 
-fn naive_solve_multi(tiles: Tiles, game_meta: &GameMeta) -> Float {
+fn naive_solve_multi(tiles: Tiles, game_meta: &GameMeta) -> (Float, u64) {
     if tiles.len() == 0 {
-        return 1.;
+        return (1., 0);
     }
     let mut prob = 0.;
     let roll_probs = &game_meta.roll_probs_multi;
     let trphm = &game_meta.trphm;
+    let mut game_count = 1;
     for (roll, roll_prob) in roll_probs {
         let trps = trphm.get(roll).unwrap();
         let mut rolls = Vec::new();
@@ -271,7 +275,9 @@ fn naive_solve_multi(tiles: Tiles, game_meta: &GameMeta) -> Float {
             match new_tiles {
                 Some(new_tiles) => {
                     let curr_prob = roll_prob;
-                    rolls.push(curr_prob * naive_solve(new_tiles, game_meta));
+                    let (win_chance, new_game_count) = naive_solve(new_tiles, game_meta);
+                    game_count += new_game_count;
+                    rolls.push(curr_prob * win_chance);
                 }
                 None => {}
             }
@@ -280,7 +286,7 @@ fn naive_solve_multi(tiles: Tiles, game_meta: &GameMeta) -> Float {
             prob += rolls.iter().cloned().fold(0. / 0., f64::max);
         }
     }
-    prob
+    (prob, game_count)
 }
 
 /// Recursively solves a given game through a depth-first traversal
