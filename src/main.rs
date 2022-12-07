@@ -75,7 +75,6 @@ fn main() {
     let game_meta = get_game_meta();
     println!("Done with setup, solving game states...");
 
-    // time this function
     let start = std::time::Instant::now();
     let algorithm = if game_meta.algorithm == Algorithm::Default {
         Algorithm::Parallel
@@ -88,7 +87,7 @@ fn main() {
         let start = std::time::Instant::now();
         let naive_prob = naive_solve(game_meta.tiles.clone(), &game_meta);
         println!("Win chance: {:.2}%", naive_prob * 100.0);
-        // println!("num of game entries: {}", naive_prob.len());
+        // println!("num of game entries: {}", naive_prob.len()); // TODO
         let duration = start.elapsed().as_secs_f64();
         println!("Time elapsed in naive_solve() is: {:.3}s\n", duration);
     }
