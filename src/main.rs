@@ -69,12 +69,12 @@ struct InitData {
 /// General Improvements
 ///     Allow to roll any number of dice, not just multi and single
 /// Remove #[derive(Debug)] from structs
-fn main(){
+fn main() {
     // TODO make these command line args
 
     let game_meta = get_game_meta();
     println!("Done with setup, solving game states...");
-    
+
     // time this function
     let start = std::time::Instant::now();
     let algorithm = if game_meta.algorithm == Algorithm::Default {
@@ -97,7 +97,10 @@ fn main(){
         let start = std::time::Instant::now();
         let mut depth_db = HashMap::new();
         depth_solve(game_meta.tiles.clone(), &game_meta, &mut depth_db);
-        println!("Win chance: {:.2}%", depth_db.get(&game_meta.tiles).unwrap() * 100.0);
+        println!(
+            "Win chance: {:.2}%",
+            depth_db.get(&game_meta.tiles).unwrap() * 100.0
+        );
         println!("num of game entries: {}", depth_db.len());
         let duration = start.elapsed().as_secs_f64();
         println!("Time elapsed in depth_solve() is: {:.3}s\n", duration);
@@ -106,15 +109,17 @@ fn main(){
         println!("Solving with parallel algorithm...");
         let start = std::time::Instant::now();
         let par_db = par_solve(game_meta.tiles.clone(), game_meta.clone());
-        println!("Win chance: {:.2}%", par_db.get(&game_meta.tiles).unwrap() * 100.0);
+        println!(
+            "Win chance: {:.2}%",
+            par_db.get(&game_meta.tiles).unwrap() * 100.0
+        );
         println!("num of game entries: {}", par_db.len());
         let duration = start.elapsed().as_secs_f64();
         println!("Time elapsed in par_solve() is: {:.3}s\n", duration);
     }
-    
+
     let duration = start.elapsed().as_secs_f64();
     println!("Total time elapsed is: {:.3}s\n", duration);
-    // println!("{:?}", &trunk.game_meta.trphm);
 }
 
 /// Gets all combinations of remaining tiles, ordered by increasing number of tiles remaining
@@ -128,7 +133,11 @@ fn get_tile_combos(tiles: &Tiles) -> Vec<Vec<Tiles>> {
 }
 
 /// Gets all possible game states with a given start condition and a number of tiles remaining
-fn get_game_states_by_tiles_remaining(remaining_tiles: &Tiles, curr_tiles: &Tiles, num_tiles: usize) -> Vec<Tiles> {
+fn get_game_states_by_tiles_remaining(
+    remaining_tiles: &Tiles,
+    curr_tiles: &Tiles,
+    num_tiles: usize,
+) -> Vec<Tiles> {
     // TODO async?
     if num_tiles == curr_tiles.len() {
         return vec![curr_tiles.clone()];
@@ -156,14 +165,8 @@ fn par_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
     println!("DONE");
 
     for t_combo in t_combos {
-        // let tiles = tiles.clone();
-        // let chunks = tiles.chunks(chunk_size.max(1));
-        // let vec = chunks.collect::<Vec<_>>();
         let vec: Vec<Tiles> = t_combo;
         result = result.clone();
-        // if vec.len() == 45 {
-        //     println!("Curr res for combos {:?} :\n{:?}", vec, result);
-        // }
         let par_iter = vec
             .par_iter()
             // .filter_map(|value| value.as_ref().ok())
@@ -242,10 +245,7 @@ fn naive_solve_single(tiles: Tiles, game_meta: &GameMeta) -> Float {
             match new_tiles {
                 Some(new_tiles) => {
                     let curr_prob = roll_prob;
-                    rolls.push(curr_prob * naive_solve(
-                        new_tiles,
-                        game_meta,
-                    ));
+                    rolls.push(curr_prob * naive_solve(new_tiles, game_meta));
                 }
                 None => {}
             }
@@ -272,10 +272,7 @@ fn naive_solve_multi(tiles: Tiles, game_meta: &GameMeta) -> Float {
             match new_tiles {
                 Some(new_tiles) => {
                     let curr_prob = roll_prob;
-                    rolls.push(curr_prob * naive_solve(
-                        new_tiles,
-                        game_meta,
-                    ));
+                    rolls.push(curr_prob * naive_solve(new_tiles, game_meta));
                 }
                 None => {}
             }
@@ -622,7 +619,6 @@ fn get_game_meta() -> GameMeta {
 
     let trphm =
         get_tile_removal_possibilities(&init_data.start_tiles, &roll_possib, &init_data.max_remove);
-
 
     GameMeta {
         die_max,
