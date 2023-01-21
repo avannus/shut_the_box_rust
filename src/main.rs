@@ -77,7 +77,7 @@ fn main() {
 
     let start = std::time::Instant::now();
     let algorithm = if game_meta.algorithm == Algorithm::Default {
-        Algorithm::Parallel
+        Algorithm::Depth
     } else {
         game_meta.algorithm
     };
@@ -94,8 +94,7 @@ fn main() {
     if algorithm == Algorithm::All || algorithm == Algorithm::Depth {
         println!("Solving with depth algorithm...");
         let start = std::time::Instant::now();
-        let mut depth_db = HashMap::new();
-        depth_solve(game_meta.tiles.clone(), &game_meta, &mut depth_db);
+        let depth_db = depth_solve(game_meta.tiles.clone(), &game_meta, &HashMap::new());
         println!("num of game entries: {}", depth_db.len());
         println!(
             "Win chance: {:.2}%",
@@ -170,8 +169,8 @@ fn par_solve(tiles: Tiles, game_meta: GameMeta) -> HashMap<Tiles, Float> {
             .par_iter()
             // .filter_map(|value| value.as_ref().ok())
             .map(|chunk| {
-                let mut res = result.clone();
-                depth_solve(chunk.to_vec(), &game_meta, &mut res);
+                let res = result.clone();
+                depth_solve(chunk.to_vec(), &game_meta, &res);
                 res
             })
             .reduce(
@@ -290,18 +289,19 @@ fn naive_solve_multi(tiles: Tiles, game_meta: &GameMeta) -> (Float, u64) {
 }
 
 /// Recursively solves a given game through a depth-first traversal
-fn depth_solve(tiles: Tiles, game_meta: &GameMeta, game_db: &mut HashMap<Tiles, Float>) -> Float {
+fn depth_solve(tiles: Tiles, game_meta: &GameMeta, game_db: &HashMap<Tiles, Float>) -> HashMap<Tiles, Float> {
     let tiles = tiles.clone();
-    let existing_game = game_db.get(&tiles);
+    let mut new_hashmap = HashMap::new();
+    let existing_game = game_db.get(&tiles); // TODO clean this, currently just used as a check
     match existing_game {
         Some(existing_game) => {
-            return existing_game.clone();
+            return new_hashmap;
         }
         None => {
             if tiles.len() == 0 {
                 let win_chance = 1.;
-                game_db.insert(tiles, win_chance);
-                return win_chance;
+                new_hashmap.insert(tiles, win_chance);
+                return new_hashmap;
             }
             let all_next_legal_states_hm = get_next_legal_states_all(&tiles, &game_meta.trphm);
             let solved_next_legal_states_hm =
@@ -340,8 +340,8 @@ fn depth_solve(tiles: Tiles, game_meta: &GameMeta, game_db: &mut HashMap<Tiles, 
                 }
             }
             let win_chance = win_chance_single.max(win_chance_multi);
-            game_db.insert(tiles, win_chance);
-            win_chance
+            new_hashmap.insert(tiles, win_chance);
+            new_hashmap
         }
     }
 }
@@ -379,17 +379,17 @@ fn get_next_legal_states_all(
     hm
 }
 
-/// TODO
+/// Finds all win chances for a vec of game states
 fn get_all_stats_from_states(
     states: &Vec<Tiles>,
     game_meta: &GameMeta,
-    game_db: &mut HashMap<Tiles, Float>,
-) -> Vec<(Tiles, Float)> {
-    let mut res = Vec::new();
+    game_db: &HashMap<Tiles, Float>,
+) -> HashMap<Tiles, Float> {
+    let mut res = HashMap::new();
     for state in states {
         let state = state.clone();
-        let stats = depth_solve(state.clone(), game_meta, game_db);
-        res.push((state, stats));
+        let stats = *depth_solve(state.clone(), game_meta, game_db).get(&state).unwrap();
+        res.insert(state, stats);
     }
     res
 }
@@ -398,12 +398,12 @@ fn get_all_stats_from_states(
 fn get_all_stats_from_hm(
     state_hm: &HashMap<Uns, Vec<Tiles>>,
     game_meta: &GameMeta,
-    game_db: &mut HashMap<Tiles, Float>,
+    game_db: &HashMap<Tiles, Float>,
 ) -> HashMap<Uns, Vec<(Tiles, Float)>> {
     let mut hm = HashMap::new();
     for (roll, game_states) in state_hm {
         let games = get_all_stats_from_states(&game_states.clone(), game_meta, game_db);
-        hm.insert(*roll, games);
+        hm.extend(games);
     }
     hm
 }
